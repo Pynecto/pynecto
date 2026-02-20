@@ -1,0 +1,188 @@
+# ==============================================================================
+#  Pynecto — Modern Python GUI Framework
+#  Top-Level CMakeLists.txt
+#
+#  This is the root build file. It orchestrates:
+#    1. The pure C core library  (core/)
+#    2. The pybind11 bindings    (bindings/)
+#
+#  Requirements:
+#    - CMake >= 3.25
+#    - C17-compatible compiler   (GCC, Clang, MSVC)
+#    - C++17-compatible compiler (for pybind11 bindings)
+#    - Python >= 3.10
+#    - SDL3 (fetched automatically via FetchContent if not found)
+# ==============================================================================
+
+cmake_minimum_required(VERSION 3.25)
+
+# ------------------------------------------------------------------------------
+# Project definition
+# ------------------------------------------------------------------------------
+project(
+    pynecto
+    VERSION      0.1.0
+    DESCRIPTION  "Modern Python GUI Framework"
+    LANGUAGES    C CXX
+)
+
+# ------------------------------------------------------------------------------
+# Global C / C++ standards — enforce strictly, no compiler extensions
+# ------------------------------------------------------------------------------
+set(CMAKE_C_STANDARD            17)
+set(CMAKE_C_STANDARD_REQUIRED   ON)
+set(CMAKE_C_EXTENSIONS          OFF)
+
+set(CMAKE_CXX_STANDARD          17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS        OFF)
+
+# ------------------------------------------------------------------------------
+# Build type defaults
+# If the user doesn't specify, default to RelWithDebInfo so we get optimizations
+# but still have debug symbols available during early development.
+# ------------------------------------------------------------------------------
+if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
+    message(STATUS "[Pynecto] No build type specified — defaulting to RelWithDebInfo")
+    set(CMAKE_BUILD_TYPE "RelWithDebInfo" CACHE STRING "Build type" FORCE)
+    set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS
+        "Debug" "Release" "RelWithDebInfo" "MinSizeRel"
+    )
+endif()
+
+# ------------------------------------------------------------------------------
+# Output directories — keep all build artifacts in predictable locations
+# ------------------------------------------------------------------------------
+set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib")
+set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib")
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+
+# ------------------------------------------------------------------------------
+# Options — users and CI can toggle these via -D flags
+# ------------------------------------------------------------------------------
+option(PYNECTO_BUILD_TESTS    "Build C and Python test targets"   ON)
+option(PYNECTO_BUILD_EXAMPLES "Build example applications"         ON)
+option(PYNECTO_USE_OPENGL     "Use OpenGL rendering backend"       ON)
+option(PYNECTO_USE_VULKAN     "Use Vulkan rendering backend"       OFF)
+option(PYNECTO_WARNINGS_AS_ERRORS "Treat compiler warnings as errors" OFF)
+
+# ------------------------------------------------------------------------------
+# Compiler warnings — high quality code requires high quality diagnostics
+# ------------------------------------------------------------------------------
+if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
+    set(PYNECTO_C_WARNING_FLAGS
+        -Wall
+        -Wextra
+        -Wpedantic
+        -Wshadow
+        -Wdouble-promotion
+        -Wformat=2
+        -Wundef
+        -fno-common
+    )
+    if(PYNECTO_WARNINGS_AS_ERRORS)
+        list(APPEND PYNECTO_C_WARNING_FLAGS -Werror)
+    endif()
+elseif(MSVC)
+    set(PYNECTO_C_WARNING_FLAGS /W4)
+    if(PYNECTO_WARNINGS_AS_ERRORS)
+        list(APPEND PYNECTO_C_WARNING_FLAGS /WX)
+    endif()
+endif()
+
+# Make warning flags available to subdirectories
+set(PYNECTO_C_WARNING_FLAGS ${PYNECTO_C_WARNING_FLAGS} CACHE INTERNAL "")
+
+# ------------------------------------------------------------------------------
+# Platform detection — expose as CMake variables and compile definitions
+# This lets core/platform.h and CMake logic share the same truth.
+# ------------------------------------------------------------------------------
+if(WIN32)
+    set(PYNECTO_PLATFORM "windows")
+    add_compile_definitions(PNC_PLATFORM_WINDOWS=1)
+elseif(APPLE)
+    set(PYNECTO_PLATFORM "macos")
+    add_compile_definitions(PNC_PLATFORM_MACOS=1)
+elseif(UNIX)
+    set(PYNECTO_PLATFORM "linux")
+    add_compile_definitions(PNC_PLATFORM_LINUX=1)
+else()
+    message(FATAL_ERROR "[Pynecto] Unsupported platform: ${CMAKE_SYSTEM_NAME}")
+endif()
+
+message(STATUS "[Pynecto] Platform : ${PYNECTO_PLATFORM}")
+message(STATUS "[Pynecto] Build type: ${CMAKE_BUILD_TYPE}")
+message(STATUS "[Pynecto] OpenGL   : ${PYNECTO_USE_OPENGL}")
+message(STATUS "[Pynecto] Vulkan   : ${PYNECTO_USE_VULKAN}")
+
+# ------------------------------------------------------------------------------
+# FetchContent — automatically pull dependencies if not found locally
+# All vendored deps live in core/vendor/ as git submodules.
+# FetchContent is a fallback for CI or fresh clones without submodules.
+# ------------------------------------------------------------------------------
+include(FetchContent)
+
+# SDL3
+# First try to find a system-installed or submodule version.
+# If not found, fetch from GitHub.
+find_package(SDL3 QUIET)
+if(NOT SDL3_FOUND)
+    message(STATUS "[Pynecto] SDL3 not found locally — fetching from GitHub...")
+    FetchContent_Declare(
+        SDL3
+        GIT_REPOSITORY https://github.com/libsdl-org/SDL.git
+        GIT_TAG        main   # pin to a release tag in production, e.g. release-3.2.0
+        GIT_SHALLOW    TRUE
+    )
+    FetchContent_MakeAvailable(SDL3)
+endif()
+
+# pybind11
+# Required for the Python ↔ C++ binding layer.
+find_package(pybind11 QUIET)
+if(NOT pybind11_FOUND)
+    message(STATUS "[Pynecto] pybind11 not found locally — fetching from GitHub...")
+    FetchContent_Declare(
+        pybind11
+        GIT_REPOSITORY https://github.com/pybind/pybind11.git
+        GIT_TAG        v2.13.1
+        GIT_SHALLOW    TRUE
+    )
+    FetchContent_MakeAvailable(pybind11)
+endif()
+
+# OpenGL (system package — not fetched, always available on target platforms)
+if(PYNECTO_USE_OPENGL)
+    find_package(OpenGL REQUIRED)
+    message(STATUS "[Pynecto] OpenGL found: ${OPENGL_LIBRARIES}")
+endif()
+
+# ------------------------------------------------------------------------------
+# Subdirectories — order matters:
+#   core must be configured before bindings (bindings links against core)
+# ------------------------------------------------------------------------------
+add_subdirectory(core)
+add_subdirectory(bindings)
+
+if(PYNECTO_BUILD_TESTS)
+    enable_testing()
+    add_subdirectory(tests/c)
+endif()
+
+# ------------------------------------------------------------------------------
+# Summary
+# ------------------------------------------------------------------------------
+message(STATUS "")
+message(STATUS "======================================")
+message(STATUS "  Pynecto ${PROJECT_VERSION} — Build Summary")
+message(STATUS "======================================")
+message(STATUS "  Platform      : ${PYNECTO_PLATFORM}")
+message(STATUS "  Build type    : ${CMAKE_BUILD_TYPE}")
+message(STATUS "  C standard    : C${CMAKE_C_STANDARD}")
+message(STATUS "  C++ standard  : C++${CMAKE_CXX_STANDARD}")
+message(STATUS "  Tests         : ${PYNECTO_BUILD_TESTS}")
+message(STATUS "  Examples      : ${PYNECTO_BUILD_EXAMPLES}")
+message(STATUS "  OpenGL        : ${PYNECTO_USE_OPENGL}")
+message(STATUS "  Vulkan        : ${PYNECTO_USE_VULKAN}")
+message(STATUS "======================================")
+message(STATUS "")
