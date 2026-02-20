@@ -29,5 +29,5 @@ Modern Python GUI framework that enable you to build virtually any type of appli
 └──────────────────────────────────────────────────┘
 ```
 
-Phase 1: The C Core Foundation
-Window creation, event loop, input handling. This is the skeleton everything else sits on. We'll use SDL3 to handle OS-level windowing so there is no need of reimplementing Win32/Cocoa/X11 for every platform.
+### Phase 1: The C Core Foundation
+<p> Window creation, event loop, input handling. This is the skeleton everything else sits on. We'll use SDL3 to handle OS-level windowing so there is no need of reimplementing Win32/Cocoa/X11 for every platform. </p>
