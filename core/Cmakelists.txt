@@ -1,0 +1,196 @@
+# ==============================================================================
+#  Pynecto — core/CMakeLists.txt
+#
+#  Defines the static C library: pynecto_core
+#
+#  This library is the entire engine. It has zero Python knowledge.
+#  It can be compiled, tested, and used completely independently of Python.
+#
+#  Targets defined here:
+#    pynecto_core          — the static library (linked by bindings/)
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# Source files
+# Every new .c file you add to core/src/ must be listed here explicitly.
+# We deliberately avoid GLOB — globbing misses new files until CMake re-runs,
+# which causes subtle "why isn't my file compiling?" bugs during development.
+# ------------------------------------------------------------------------------
+set(PYNECTO_CORE_SOURCES
+    src/window.c
+    src/event.c
+    src/context.c
+    src/platform.c
+)
+
+# ------------------------------------------------------------------------------
+# Header files (listed for IDE visibility — not required by the compiler)
+# Most IDEs (CLion, VS, VSCode + CMake Tools) use this to show headers in
+# the project tree and enable go-to-definition across .h files.
+# ------------------------------------------------------------------------------
+set(PYNECTO_CORE_HEADERS
+    include/pynecto/window.h
+    include/pynecto/event.h
+    include/pynecto/context.h
+    include/pynecto/platform.h
+)
+
+# ------------------------------------------------------------------------------
+# Static library target
+#
+# We build as STATIC (not SHARED) because:
+#   - The bindings layer will link against it and produce a single .pyd/.so
+#   - Users install one file, not a collection of shared libraries
+#   - No runtime linker path headaches on any platform
+# ------------------------------------------------------------------------------
+add_library(pynecto_core STATIC
+    ${PYNECTO_CORE_SOURCES}
+    ${PYNECTO_CORE_HEADERS}
+)
+
+# ------------------------------------------------------------------------------
+# Include directories
+#
+# PUBLIC  → pynecto_core itself AND anything linking against it can see these.
+#           This means bindings/ gets core/include/ for free just by linking.
+#
+# PRIVATE → only pynecto_core's own .c files see these (internal impl details).
+# ------------------------------------------------------------------------------
+target_include_directories(pynecto_core
+    PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+        $<INSTALL_INTERFACE:include>
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+)
+
+# ------------------------------------------------------------------------------
+# Compile definitions
+#
+# These are injected into every .c file in this target.
+# PNC_CORE_BUILD signals to headers that we are building the library itself
+# (as opposed to a consumer including the headers), allowing dllexport/dllimport
+# distinctions on Windows if we ever switch to a shared build.
+# ------------------------------------------------------------------------------
+target_compile_definitions(pynecto_core
+    PRIVATE
+        PNC_CORE_BUILD=1
+        $<$<CONFIG:Debug>:PNC_DEBUG=1>
+        $<$<CONFIG:Release>:PNC_RELEASE=1>
+        $<$<CONFIG:RelWithDebInfo>:PNC_RELEASE=1 PNC_DEBUG_SYMBOLS=1>
+)
+
+# ------------------------------------------------------------------------------
+# Compiler warning flags
+# Inherited from the root CMakeLists.txt via the PYNECTO_C_WARNING_FLAGS cache
+# variable. Applied as PRIVATE so they don't leak to consumers of this library.
+# ------------------------------------------------------------------------------
+target_compile_options(pynecto_core
+    PRIVATE
+        ${PYNECTO_C_WARNING_FLAGS}
+)
+
+# ------------------------------------------------------------------------------
+# Link SDL3
+#
+# SDL3::SDL3 is the modern CMake target exported by SDL3's own CMakeLists.
+# Linking it as PUBLIC means anything that links pynecto_core also gets SDL3
+# headers and link flags automatically — the bindings layer needs this.
+# ------------------------------------------------------------------------------
+target_link_libraries(pynecto_core
+    PUBLIC
+        SDL3::SDL3
+)
+
+# ------------------------------------------------------------------------------
+# Link OpenGL if enabled
+# ------------------------------------------------------------------------------
+if(PYNECTO_USE_OPENGL)
+    target_link_libraries(pynecto_core
+        PUBLIC
+            OpenGL::GL
+    )
+    target_compile_definitions(pynecto_core
+        PUBLIC
+            PNC_RENDERER_OPENGL=1
+    )
+endif()
+
+# ------------------------------------------------------------------------------
+# Link Vulkan if enabled
+# ------------------------------------------------------------------------------
+if(PYNECTO_USE_VULKAN)
+    find_package(Vulkan REQUIRED)
+    target_link_libraries(pynecto_core
+        PUBLIC
+            Vulkan::Vulkan
+    )
+    target_compile_definitions(pynecto_core
+        PUBLIC
+            PNC_RENDERER_VULKAN=1
+    )
+endif()
+
+# ------------------------------------------------------------------------------
+# Platform-specific system libraries
+#
+# These are low-level OS libraries that SDL3 or our platform layer needs.
+# SDL3's CMake config handles most of this, but some platforms need extras.
+# ------------------------------------------------------------------------------
+if(WIN32)
+    target_link_libraries(pynecto_core
+        PRIVATE
+            dwmapi       # Desktop Window Manager (for DPI, window chrome)
+            imm32        # Input Method Manager (for IME / CJK text input)
+    )
+elseif(APPLE)
+    find_library(COCOA_LIBRARY       Cocoa       REQUIRED)
+    find_library(IOKIT_LIBRARY       IOKit       REQUIRED)
+    find_library(COREFOUNDATION_LIB  CoreFoundation REQUIRED)
+    target_link_libraries(pynecto_core
+        PRIVATE
+            ${COCOA_LIBRARY}
+            ${IOKIT_LIBRARY}
+            ${COREFOUNDATION_LIB}
+    )
+elseif(UNIX)
+    # X11 or Wayland — SDL3 detects at runtime, but we need headers at build time
+    find_package(X11 QUIET)
+    if(X11_FOUND)
+        target_link_libraries(pynecto_core PRIVATE ${X11_LIBRARIES})
+        target_include_directories(pynecto_core PRIVATE ${X11_INCLUDE_DIR})
+    endif()
+
+    # pthreads — needed for our event loop threading on Linux
+    find_package(Threads REQUIRED)
+    target_link_libraries(pynecto_core PRIVATE Threads::Threads)
+endif()
+
+# ------------------------------------------------------------------------------
+# Position Independent Code
+#
+# Required when this static library is linked into a shared object (.so / .pyd).
+# The Python extension produced by bindings/ is a shared object, so pynecto_core
+# must be compiled with -fPIC on Linux/macOS or linking will fail.
+# ------------------------------------------------------------------------------
+set_target_properties(pynecto_core PROPERTIES
+    POSITION_INDEPENDENT_CODE ON
+)
+
+# ------------------------------------------------------------------------------
+# C standard enforcement at the target level
+# Belt-and-suspenders: the root already sets CMAKE_C_STANDARD globally,
+# but setting it per-target ensures it's correct even if someone adds
+# pynecto_core as a subdirectory in a larger project with different globals.
+# ------------------------------------------------------------------------------
+set_target_properties(pynecto_core PROPERTIES
+    C_STANDARD          17
+    C_STANDARD_REQUIRED ON
+    C_EXTENSIONS        OFF
+)
+
+# ------------------------------------------------------------------------------
+# Status output
+# ------------------------------------------------------------------------------
+message(STATUS "[pynecto_core] Sources : ${PYNECTO_CORE_SOURCES}")
+message(STATUS "[pynecto_core] Platform: ${PYNECTO_PLATFORM}")
