@@ -36,6 +36,28 @@ set(PYNECTO_CORE_HEADERS
 )
 
 # ------------------------------------------------------------------------------
+# glad — OpenGL 3.3 core loader
+#
+# Vendored (not FetchContent'd): a generated loader is stable boilerplate,
+# not a moving dependency, so it lives in vendor/ and is compiled directly.
+# Windows only exposes GL 1.1 without a loader, so this must exist before
+# context.c (which calls gladLoadGL after the first GL context is made current).
+# ------------------------------------------------------------------------------
+add_library(glad STATIC
+    vendor/glad/src/gl.c
+)
+
+target_include_directories(glad
+    PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/vendor/glad/include>
+        $<INSTALL_INTERFACE:include>
+)
+
+set_target_properties(glad PROPERTIES
+    POSITION_INDEPENDENT_CODE ON
+)
+
+# ------------------------------------------------------------------------------
 # Static library target
 #
 # We build as STATIC (not SHARED) because:
@@ -100,6 +122,7 @@ target_compile_options(pynecto_core
 target_link_libraries(pynecto_core
     PUBLIC
         SDL3::SDL3
+        glad
 )
 
 # ------------------------------------------------------------------------------

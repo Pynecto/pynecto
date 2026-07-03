@@ -154,13 +154,11 @@ static_assert(sizeof(pnc_f64) == 8, "pnc_f64 must be 8 bytes");
 #define PNC_CLAMP(val, lo, hi) \
     ((val) < (lo) ? (lo) : ((val) > (hi) ? (hi) : (val)))
 
-#if defined(PNC_COMPILER_GCC) || defined(PNC_COMPILER_CLANG)
-#   define PNC_MIN(a, b) ({ __typeof__(a) _a = (a); __typeof__(b) _b = (b); _a < _b ? _a : _b; })
-#   define PNC_MAX(a, b) ({ __typeof__(a) _a = (a); __typeof__(b) _b = (b); _a > _b ? _a : _b; })
-#else
-#   define PNC_MIN(a, b) ((a) < (b) ? (a) : (b))
-#   define PNC_MAX(a, b) ((a) > (b) ? (a) : (b))
-#endif
+/* Plain ternaries — GNU statement-expressions were rejected because
+ * C_EXTENSIONS is OFF and -Wpedantic is on. Caveat: a/b are evaluated
+ * twice, so callers must not pass expressions with side effects. */
+#define PNC_MIN(a, b) ((a) < (b) ? (a) : (b))
+#define PNC_MAX(a, b) ((a) > (b) ? (a) : (b))
 
 #define PNC_ALIGN_UP(size, align) \
     (((size) + (align) - 1) & ~((align) - 1))
@@ -188,7 +186,7 @@ static_assert(sizeof(pnc_f64) == 8, "pnc_f64 must be 8 bytes");
             }                                                               \
         } while (0)
 #else
-#   define PNC_ASSERT(cond) PNC_UNUSED(cond)
+#   define PNC_ASSERT(cond) ((void)0)
 #endif
 
 

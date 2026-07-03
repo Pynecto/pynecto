@@ -311,7 +311,9 @@ typedef struct PncEvent {
 
 } PncEvent;
 
-PNC_STATIC_ASSERT(sizeof(PncEvent) == 128 + sizeof(PncEventType),
+/* type (4 bytes) is padded to 8 for the union's 8-byte alignment
+ * (pnc_u64 / pointer members), so the layout is 8 + 128, not 4 + 128. */
+PNC_STATIC_ASSERT(sizeof(PncEvent) == 136,
     "PncEvent size contract broken");
 
 PNC_API pnc_bool pnc_event_poll(PncEvent *event);
