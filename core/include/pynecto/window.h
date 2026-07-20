@@ -84,6 +84,7 @@ PNC_API void pnc_window_minimize(PncWindow *window);
 PNC_API void pnc_window_restore(PncWindow *window);
 
 PNC_API void pnc_window_get_state(const PncWindow *window, PncWindowState *state);
+PNC_API pnc_u32 pnc_window_get_id(const PncWindow *window);
 PNC_API const char *pnc_window_get_title(const PncWindow *window);
 PNC_API pnc_i32 pnc_window_get_width(const PncWindow *window);
 PNC_API pnc_i32 pnc_window_get_height(const PncWindow *window);
