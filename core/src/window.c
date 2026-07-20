@@ -315,6 +315,10 @@ void pnc_window_get_state(const PncWindow *window, PncWindowState *state) {
     state->mouse_over = (flags & SDL_WINDOW_MOUSE_FOCUS) != 0;
 }
 
+pnc_u32 pnc_window_get_id(const PncWindow *window) {
+    return SDL_GetWindowID(window->sdl_window);
+}
+
 const char *pnc_window_get_title(const PncWindow *window) {
     return SDL_GetWindowTitle(window->sdl_window);
 }
